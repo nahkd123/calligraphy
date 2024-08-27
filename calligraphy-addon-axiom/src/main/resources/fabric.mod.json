@@ -1,0 +1,22 @@
+{
+	"schemaVersion": 1,
+	"id": "calligraphy-addon-axiom",
+	"version": "${version}",
+	"name": "Calligraphy Axiom Addon",
+	"description": "Calligraphy Addon for Axiom",
+	"authors": [
+		"nahkd123"
+	],
+	"environment": "*",
+	"entrypoints": {
+		"client": [
+			"me.nahkd.calligraphy.addon.axiom.CalligraphyAxiomAddon"
+		]
+	},
+	"mixins": [
+		"calligraphy_axiom.mixins.json"
+	],
+	"depends": {
+		"axiom": ">=1.0.5"
+	}
+}

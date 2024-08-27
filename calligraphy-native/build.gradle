@@ -1,0 +1,35 @@
+plugins {
+	id 'cpp-library'
+}
+
+library {
+	linkage = [Linkage.SHARED]
+
+	targetMachines = [
+		machines.windows.x86_64,
+		machines.linux.x86_64,
+		machines.macOS.x86_64
+	]
+
+	source {
+		setFrom 'src/main/cpp/library.cpp'
+	}
+}
+
+import org.gradle.internal.jvm.Jvm
+def jvmHome = Jvm.current().javaHome
+
+tasks.withType(CppCompile).configureEach {
+	includes.from(new File(jvmHome, "include"))
+	includes.from(new File(jvmHome, "include/win32"))
+	includes.from(project(':calligraphy-api').layout.buildDirectory.dir('generated/sources/headers/java/main'))
+
+	if (name.contains('Windows')) compilerArgs.addAll('/std:c++20')
+	if (name.startsWith('compileReleaseWindows')) compilerArgs.addAll('/O2') // Optimize for speed
+
+	dependsOn ':calligraphy-api:compileJava'
+}
+
+tasks.withType(AbstractLinkTask).configureEach {
+	if (name.endsWith('Windows')) linkerArgs.addAll('ole32.lib')
+}

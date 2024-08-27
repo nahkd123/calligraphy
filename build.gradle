@@ -1,0 +1,70 @@
+plugins {
+	id 'fabric-loom' version '1.7-SNAPSHOT'
+	id 'maven-publish'
+}
+
+version = rootProject.mod_version
+group = rootProject.maven_group
+
+base {
+	archivesName = project.archives_base_name
+}
+
+repositories {
+}
+
+dependencies {
+	// To change the versions see the gradle.properties file
+	minecraft "com.mojang:minecraft:${rootProject.minecraft_version}"
+	mappings "net.fabricmc:yarn:${rootProject.yarn_mappings}:v2"
+	modImplementation "net.fabricmc:fabric-loader:${rootProject.loader_version}"
+
+	// Calligraphy
+	api include(project(':calligraphy-api'))
+	compileOnly include(project(path: ':calligraphy-addon-axiom', configuration: 'namedElements'))
+
+	// Mod dependencies
+	modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_version}"
+}
+
+processResources {
+	inputs.property "version", rootProject.version
+
+	filesMatching("fabric.mod.json") {
+		expand "version": rootProject.version
+	}
+}
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}
+
+jar {
+	from("LICENSE") {
+		rename { "${it}_${project.base.archivesName.get()}"}
+	}
+}
+
+// configure the maven publication
+publishing {
+	publications {
+		create("mavenJava", MavenPublication) {
+			artifactId = project.archives_base_name
+			from components.java
+		}
+	}
+
+	// See https://docs.gradle.org/current/userguide/publishing_maven.html for information on how to set up publishing.
+	repositories {
+		// Add repositories to publish to here.
+		// Notice: This block does NOT have the same function as the block in the top level.
+		// The repositories here will be used for publishing your artifact, not for
+		// retrieving dependencies.
+	}
+}
