@@ -22,7 +22,7 @@ dependencies {
 
 	// Mod dependencies
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${rootProject.fabric_version}"
-	modCompileOnly "com.github.moulberry:AxiomClientAPI:${rootProject.axiomapi_version}"
+	modImplementation "com.github.moulberry:AxiomClientAPI:${rootProject.axiomapi_version}"
 }
 
 processResources {

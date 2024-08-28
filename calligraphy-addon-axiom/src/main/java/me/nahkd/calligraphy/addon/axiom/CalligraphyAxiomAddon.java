@@ -11,7 +11,7 @@ import com.moulberry.axiomclientapi.service.ToolPatherProvider;
 import com.moulberry.axiomclientapi.service.ToolRegistryService;
 import com.moulberry.axiomclientapi.service.ToolService;
 
-import me.nahkd.calligraphy.addon.axiom.tool.CalligraphyBrushTool;
+import me.nahkd.calligraphy.addon.axiom.tool.SimpleBrushTool;
 import net.fabricmc.api.ClientModInitializer;
 
 public final class CalligraphyAxiomAddon implements ClientModInitializer {
@@ -32,7 +32,7 @@ public final class CalligraphyAxiomAddon implements ClientModInitializer {
 		toolRegistryService = findOrThrow(ToolRegistryService.class);
 
 		LOGGER.info("Registering tools...");
-		toolRegistryService.register(new CalligraphyBrushTool(regionProvider, patherProvider, toolService));
+		toolRegistryService.register(new SimpleBrushTool(regionProvider, patherProvider, toolService));
 	}
 
 	private static <T> T findOrThrow(Class<T> type) {

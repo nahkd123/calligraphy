@@ -1,9 +1,11 @@
 package me.nahkd.calligraphy.addon.axiom.tool;
 
+import java.util.Collection;
+import java.util.List;
+
 import org.joml.Matrix4f;
 import org.lwjgl.glfw.GLFW;
 
-import com.moulberry.axiomclientapi.CustomTool;
 import com.moulberry.axiomclientapi.Effects;
 import com.moulberry.axiomclientapi.pathers.BallShape;
 import com.moulberry.axiomclientapi.pathers.ToolPatherUnique;
@@ -13,8 +15,10 @@ import com.moulberry.axiomclientapi.service.RegionProvider;
 import com.moulberry.axiomclientapi.service.ToolPatherProvider;
 import com.moulberry.axiomclientapi.service.ToolService;
 
-import imgui.ImGui;
 import me.nahkd.calligraphy.Calligraphy;
+import me.nahkd.calligraphy.addon.axiom.tool.control.FloatRangeSliderControl;
+import me.nahkd.calligraphy.addon.axiom.tool.control.FloatSliderControl;
+import me.nahkd.calligraphy.addon.axiom.tool.control.ToolControl;
 import me.nahkd.calligraphy.api.PenPacket;
 import net.minecraft.block.BlockState;
 import net.minecraft.client.render.Camera;
@@ -22,17 +26,19 @@ import net.minecraft.client.util.math.MatrixStack;
 import net.minecraft.util.hit.BlockHitResult;
 import net.minecraft.util.math.Vec3d;
 
-public class CalligraphyBrushTool implements CustomTool {
+public class SimpleBrushTool implements CalligraphyAxiomTool {
 	private final BlockRegion blockRegion;
 	private final BooleanRegion previewRegion;
 	private ToolPatherProvider patherProvider;
 	private ToolService toolService;
 	private boolean using = false;
-
-	private int[] radiusMin = { 0 }, radiusMax = { 10 };
 	private int currentPreviewRadius = 0;
 
-	public CalligraphyBrushTool(RegionProvider regionProvider, ToolPatherProvider patherProvider, ToolService toolService) {
+	private FloatRangeSliderControl size = new FloatRangeSliderControl("size", 1f, 10f, 0f, 100f, "Size", "%.1f -> %.1f");
+	private FloatSliderControl curveExponent = new FloatSliderControl("curveExponent", 1f, 0f, 10f, "P. Curve Exp", "%.4f");
+	private Collection<ToolControl<?>> controls = List.of(size, curveExponent);
+
+	public SimpleBrushTool(RegionProvider regionProvider, ToolPatherProvider patherProvider, ToolService toolService) {
 		this.patherProvider = patherProvider;
 		this.toolService = toolService;
 		this.blockRegion = regionProvider.createBlock();
@@ -41,13 +47,19 @@ public class CalligraphyBrushTool implements CustomTool {
 
 	@Override
 	public String name() {
-		return "Brush [+ Pen Tablet]";
+		return "Calligraphy: Simple Brush";
 	}
 
 	@Override
-	public void displayImguiOptions() {
-		ImGui.dragIntRange2("Radius", radiusMin, radiusMax, 1, 0, 100, "Min %d", "Max %d");
-		ImGui.labelText("Pressure", Calligraphy.getLiveData().pressure() + "/" + Calligraphy.getLiveData().maxPressure());
+	public Collection<ToolControl<?>> getControls() {
+		return controls;
+	}
+
+	public int getSizeFromPressure(short pressure, short maxPressure) {
+		if (!Calligraphy.isPlatformSupported()) return (int) size.getEnd();
+		float delta = size.getEnd() - size.getStart();
+		float calculated = size.getStart() + (float) (Math.pow(pressure / (double) maxPressure, curveExponent.get().doubleValue()) * delta);
+		return (int) Math.max(calculated, 0f);
 	}
 
 	@Override
@@ -68,21 +80,21 @@ public class CalligraphyBrushTool implements CustomTool {
 		if (!using) {
 			// Preview
 			BlockHitResult hitResult = toolService.raycastBlock();
+			int maxSize = (int) size.getEnd();
 			if (hitResult == null) return;
 
-			if (currentPreviewRadius != radiusMax[0]) {
+			if (currentPreviewRadius != maxSize ) {
 				previewRegion.clear();
-				BallShape.SPHERE.fillRegion(previewRegion, radiusMax[0]);
+				BallShape.SPHERE.fillRegion(previewRegion, maxSize);
 			}
 
-			previewRegion.render(camera, hitResult.getPos().add(0.5, 0.5, 0.5), poseStack, projection, time, Effects.OUTLINE);
+			previewRegion.render(camera, hitResult.getPos().add(0.5, 0.5, 0.5), poseStack, projection, time, Effects.BLUE);
 			return;
 		}
 
 		if (toolService.isMouseDown(GLFW.GLFW_MOUSE_BUTTON_RIGHT)) {
 			PenPacket pen = Calligraphy.getLiveData();
-			int radiusDelta = radiusMax[0] - radiusMin[0];
-			int radius = radiusMin[0] + (pen.pressure() * radiusDelta / pen.maxPressure());
+			int radius = getSizeFromPressure(pen.pressure(), pen.maxPressure());
 			if (radius <= 0) return;
 
 			BlockState block = toolService.getActiveBlock();
