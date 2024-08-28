@@ -9,8 +9,8 @@
 /////////////
 // DEFINES //
 /////////////
-#define FLAG_ERASER 1
-#define FLAG_AUXCLICK 2
+#define FLAG_ERASER 1ull
+#define FLAG_AUXCLICK 2ull
 
 #define ERRNO_SUCCESS 0
 #define ERRNO_UNKNOWN 1

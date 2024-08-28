@@ -11,79 +11,87 @@ jobject windowsJCallback;
 jmethodID windowsJCallbackMethod;
 
 // Store previous packet
+// We don't send duplicated packets to avoid overloading JVM
 PenPacketData windowsPreviousPkt = { 0, 1, 0, 0, 0 };
 
-void windowsEmitPackets(
-		bool hovering,
-		IRealTimeStylus *rts,
-		const StylusInfo *stylus,
-		ULONG packetsCount, ULONG bufferLength, LONG *buffer,
-		ULONG *outPacketsCount, LONG **outBuffer) {
-	if (!windowsInitialized) return;
-
-	// #region Read maximum pressure
-	ULONG propertiesCount = bufferLength / packetsCount;
-	IInkTablet *tablet;
-	float scaleX, scaleY;
-	LONG maxPressure = 1;
-	ULONG specPropsCount;
-	PACKET_PROPERTY *specProps;
-	rts->GetPacketDescriptionData(stylus->tcid, &scaleX, &scaleY, &specPropsCount, &specProps);
-
-	for (ULONG i = 0; i < specPropsCount; i++) {
-		if (specProps[i].guid != GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) continue;
-		maxPressure = specProps[i].PropertyMetrics.nLogicalMax;
-		break;
-	}
-	// #endregion
-
-	// #region Emit events
-	JNIEnv *jEnv;
-	if (windowsJVM->AttachCurrentThread((void**)&jEnv, NULL)) return;
-
-	for (ULONG i = 0; i < packetsCount; i += propertiesCount) {
-		PenPacketData nextPkt = {
-			propertiesCount >= 3 ? buffer[i + 2] : hovering ? 0 : 1,
-			maxPressure,
-			propertiesCount >= 4 ? buffer[i + 3] : 0,
-			propertiesCount >= 5 ? buffer[i + 4] : 0,
-			0
-		};
-
-		if (windowsPreviousPkt == nextPkt) continue;
-		windowsPreviousPkt = nextPkt;
-		jEnv->CallVoidMethod(
-				windowsJCallback,
-				windowsJCallbackMethod,
-				(jshort)nextPkt.pressure,
-				(jshort)maxPressure,
-				(jshort)nextPkt.tiltX,
-				(jshort)nextPkt.tiltY,
-				(jlong)0);
-	}
-
-	windowsJVM->DetachCurrentThread();
-	// #endregion
-}
-
-/*void windowsEmitPackets(const PenPacketData &data) {
-	if (!windowsInitialized) return;
-	JNIEnv *jEnv;
-	if (windowsJVM->AttachCurrentThread((void**)&jEnv, NULL)) return;
-	jEnv->CallVoidMethod(
-			windowsJCallback,
-			windowsJCallbackMethod,
-			(jshort) data.pressure,
-			(jshort) data.maxPressure,
-			(jshort) data.tiltX,
-			(jshort) data.tiltY,
-			(jlong) data.flags);
-	windowsJVM->DetachCurrentThread();
-}*/
+// Struct for mapping the layout of packet
+typedef struct {
+	int pressure;
+	int status;
+	int tiltX;
+	int tiltY;
+	LONG specMaxPressure;
+} WinInkPacketLayout;
 
 class CalligraphyStylusPlugin : public IStylusAsyncPlugin {
 private:
 	LONG references;
+
+	WinInkPacketLayout mapLayout(IRealTimeStylus *rts, TABLET_CONTEXT_ID tcid) {
+		float scaleX, scaleY;
+		ULONG propsCount;
+		PACKET_PROPERTY *props;
+		WinInkPacketLayout layout = { -1, -1, -1, -1, 1 };
+		if (FAILED(rts->GetPacketDescriptionData(tcid, &scaleX, &scaleY, &propsCount, &props))) return layout;
+
+		for (ULONG i = 0; i < propsCount; i++) {
+			if (props[i].guid == GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE) {
+				layout.pressure = (int)i;
+				layout.specMaxPressure = props[i].PropertyMetrics.nLogicalMax;
+			}
+
+			if (props[i].guid == GUID_PACKETPROPERTY_GUID_PACKET_STATUS) layout.status = (int)i;
+			if (props[i].guid == GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION) layout.tiltX = (int)i;
+			if (props[i].guid == GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION) layout.tiltY = (int)i;
+		}
+
+		return layout;
+	}
+
+	void emitPackets(
+			bool hovering,
+			IRealTimeStylus *rts,
+			const StylusInfo *stylus,
+			ULONG packetsCount, ULONG bufferLength, LONG *buffer,
+			ULONG *outPacketsCount, LONG **outBuffer) {
+		if (!windowsInitialized) return;
+		ULONG propertiesCount = bufferLength / packetsCount;
+		WinInkPacketLayout layout = mapLayout(rts, stylus->tcid);
+
+		// #region Emit events
+		JNIEnv *jEnv;
+		if (windowsJVM->AttachCurrentThread((void**)&jEnv, NULL)) return;
+
+		for (ULONG i = 0; i < packetsCount; i += propertiesCount) {
+			// 0000[isBarrel]0[isEraser][isDown]
+			LONG packetStatus = layout.status != -1 ? buffer[i + layout.status] : hovering ? 0 : 1;
+			bool barrel = packetStatus & 8;
+			bool eraser = packetStatus & 2;
+
+			PenPacketData nextPkt = {
+				layout.pressure != -1 ? buffer[i + layout.pressure] : hovering ? 0 : 1,
+				layout.specMaxPressure,
+				layout.tiltX != -1 ? buffer[i + layout.tiltX] : 0,
+				layout.tiltY != -1 ? buffer[i + layout.tiltY] : 0,
+				(eraser ? FLAG_ERASER : 0ull) |
+				(barrel ? FLAG_AUXCLICK : 0ull)
+			};
+
+			if (windowsPreviousPkt == nextPkt) continue;
+			windowsPreviousPkt = nextPkt;
+			jEnv->CallVoidMethod(
+					windowsJCallback,
+					windowsJCallbackMethod,
+					(jshort)nextPkt.pressure,
+					(jshort)nextPkt.maxPressure,
+					(jshort)nextPkt.tiltX,
+					(jshort)nextPkt.tiltY,
+					(jlong)nextPkt.flags);
+		}
+
+		windowsJVM->DetachCurrentThread();
+		// #endregion
+	}
 public:
 	CalligraphyStylusPlugin() : references(1) {}
 	virtual ~CalligraphyStylusPlugin() {}
@@ -105,12 +113,21 @@ public:
 		return E_NOINTERFACE;
 	}
 
+	STDMETHOD (DataInterest)(RealTimeStylusDataInterest *pEventInterest) {
+		*pEventInterest = (RealTimeStylusDataInterest)(
+				RTSDI_Packets |
+				RTSDI_InAirPackets |
+				RTSDI_StylusUp |
+				RTSDI_StylusDown);
+		return S_OK;
+	}
+
 	STDMETHOD (Packets)(
 			IRealTimeStylus *rts,
 			const StylusInfo *stylus,
 			ULONG packetsCount, ULONG bufferLength, LONG *buffer,
 			ULONG *outPacketsCount, LONG **outBuffer) {
-		windowsEmitPackets(false, rts, stylus, packetsCount, bufferLength, buffer, outPacketsCount, outBuffer);
+		emitPackets(false, rts, stylus, packetsCount, bufferLength, buffer, outPacketsCount, outBuffer);
 		return S_OK;
 	}
 
@@ -119,7 +136,7 @@ public:
 			const StylusInfo *stylus,
 			ULONG packetsCount, ULONG bufferLength, LONG *buffer,
 			ULONG *outPacketsCount, LONG **outBuffer) {
-		windowsEmitPackets(true, rts, stylus, packetsCount, bufferLength, buffer, outPacketsCount, outBuffer);
+		emitPackets(true, rts, stylus, packetsCount, bufferLength, buffer, outPacketsCount, outBuffer);
 		return S_OK;
 	}
 
@@ -129,7 +146,7 @@ public:
 			ULONG bufferLength, LONG *buffer,
 			LONG **outBuffer) {
 		ULONG temp;
-		windowsEmitPackets(false, rts, stylus, 1, bufferLength, buffer, &temp, outBuffer);
+		emitPackets(false, rts, stylus, 1, bufferLength, buffer, &temp, outBuffer);
 		return S_OK;
 	}
 
@@ -140,25 +157,16 @@ public:
 			LONG *buffer,
 			LONG **outBuffer) {
 		ULONG temp;
-		windowsEmitPackets(true, rts, stylus, 1, bufferLength, buffer, &temp, outBuffer);
+		emitPackets(true, rts, stylus, 1, bufferLength, buffer, &temp, outBuffer);
 		return S_OK;
 	}
 
-	STDMETHOD (DataInterest)(RealTimeStylusDataInterest *pEventInterest) {
-		*pEventInterest = (RealTimeStylusDataInterest)(
-				RTSDI_Packets |
-				RTSDI_InAirPackets |
-				RTSDI_StylusUp |
-				RTSDI_StylusDown);
-		return S_OK;
-	}
-
+	STDMETHOD (StylusButtonUp)(IRealTimeStylus *rts, STYLUS_ID sid, const GUID *guid, POINT*) { return S_OK; }
+	STDMETHOD (StylusButtonDown)(IRealTimeStylus *rts, STYLUS_ID sid, const GUID *guid, POINT*) { return S_OK; }
 	STDMETHOD (RealTimeStylusEnabled)(IRealTimeStylus*, ULONG, const TABLET_CONTEXT_ID*) { return S_OK; }
 	STDMETHOD (RealTimeStylusDisabled)(IRealTimeStylus*, ULONG, const TABLET_CONTEXT_ID*) { return S_OK; }
 	STDMETHOD (StylusInRange)(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) { return S_OK; }
 	STDMETHOD (StylusOutOfRange)(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID) { return S_OK; }
-	STDMETHOD (StylusButtonUp)(IRealTimeStylus*, STYLUS_ID, const GUID*, POINT*) { return S_OK; }
-	STDMETHOD (StylusButtonDown)(IRealTimeStylus*, STYLUS_ID, const GUID*, POINT*) { return S_OK; }
 	STDMETHOD (SystemEvent)(IRealTimeStylus*, TABLET_CONTEXT_ID, STYLUS_ID, SYSTEM_EVENT, SYSTEM_EVENT_DATA) { return S_OK; }
 	STDMETHOD (TabletAdded)(IRealTimeStylus*, IInkTablet*) { return S_OK; }
 	STDMETHOD (TabletRemoved)(IRealTimeStylus*, LONG) { return S_OK; }
@@ -227,11 +235,12 @@ int calligraphyInit(JNIEnv *jEnv, jobject jCallback, void *handle) {
 
 	GUID props[] = {
 			GUID_PACKETPROPERTY_GUID_NORMAL_PRESSURE,
+			GUID_PACKETPROPERTY_GUID_PACKET_STATUS,
 			GUID_PACKETPROPERTY_GUID_X_TILT_ORIENTATION,
 			GUID_PACKETPROPERTY_GUID_Y_TILT_ORIENTATION
 	};
 
-	windowsRts->SetDesiredPacketDescription(3, props);
+	windowsRts->SetDesiredPacketDescription(4, props);
 	windowsRts->put_Enabled(true);
 	return hr;
 }
