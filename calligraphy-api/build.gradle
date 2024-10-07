@@ -8,26 +8,9 @@ repositories {
 dependencies {
 }
 
-def copyDlls = tasks.register("copyDlls", Sync) {
-	["Windows", "Linux", "MacOS"].forEach { os ->
-		if (project(':calligraphy-native').tasks.findByName("linkRelease${os}")) {
-			from(project(':calligraphy-native').tasks.named("linkRelease${os}").get().linkedFile) {
-				into "calligraphy-native/${os}"
-			}
-		}
-	}
-
-	into layout.buildDirectory.dir('dlls')
-}
-
-// Include shared libraries
-sourceSets.main.resources.srcDir copyDlls
-
 tasks.withType(JavaCompile).configureEach {
 	it.options.release = 21
 }
-
-evaluationDependsOn ':calligraphy-native'
 
 java {
 	withSourcesJar()

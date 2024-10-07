@@ -1,0 +1,41 @@
+plugins {
+	id 'java-library'
+}
+
+repositories {
+}
+
+dependencies {
+	api project(':calligraphy-api')
+}
+
+def copyDlls = tasks.register("copyDlls", Sync) {
+	def archs = ['X86-64', 'Aarch64'];
+
+	archs.forEach { arch ->
+		from(project(':calligraphy-windows-native').tasks.named("linkRelease${arch}").get().linkedFile) {
+			into "natives/windows/${arch.toLowerCase()}"
+		}
+	}
+
+	rename { fileName ->
+		"calligraphy-winink.dll"
+	}
+
+	into layout.buildDirectory.dir('dlls')
+}
+
+// Include shared libraries
+sourceSets.main.resources.srcDir copyDlls
+
+tasks.withType(JavaCompile).configureEach {
+	it.options.release = 21
+}
+
+evaluationDependsOn ':calligraphy-windows-native'
+
+java {
+	withSourcesJar()
+	sourceCompatibility = JavaVersion.VERSION_21
+	targetCompatibility = JavaVersion.VERSION_21
+}

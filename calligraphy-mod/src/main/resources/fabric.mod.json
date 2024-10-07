@@ -1,9 +1,9 @@
 {
 	"schemaVersion": 1,
-	"id": "calligraphy-addon-axiom",
+	"id": "calligraphy",
 	"version": "${version}",
 	"name": "Calligraphy",
-	"description": "Calligraphy Axiom Addon",
+	"description": "Calligraphy Pen Tablet Mod",
 	"authors": [
 		"nahkd123"
 	],
@@ -17,14 +17,16 @@
 	"environment": "*",
 	"entrypoints": {
 		"client": [
-			"me.nahkd.calligraphy.addon.axiom.CalligraphyAxiomAddon"
+			"me.nahkd.calligraphy.CalligraphyMod"
 		]
 	},
 	"mixins": [
-		"calligraphy_axiom.mixins.json"
+		"calligraphy.mixins.json"
 	],
 	"depends": {
-		"calligraphy": "*",
-		"axiom": ">=1.0.5"
+		"fabricloader": ">=0.16.2",
+		"minecraft": "~1.21.1",
+		"java": ">=21",
+		"fabric-api": "*"
 	}
 }

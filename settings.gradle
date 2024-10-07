@@ -9,8 +9,11 @@ pluginManagement {
 	}
 }
 
-include 'calligraphy-native'
 include 'calligraphy-api'
+include 'calligraphy-mod'
+
+include 'calligraphy-windows'
+include 'calligraphy-windows-native'
 
 // Addons
 include 'calligraphy-addon-axiom'

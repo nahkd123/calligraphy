@@ -1,0 +1,33 @@
+plugins {
+	id 'cpp-library'
+}
+
+library {
+	linkage = [Linkage.SHARED]
+	targetMachines = [
+		machines.windows.x86_64,
+		machines.windows.architecture('aarch64')
+	]
+
+	source {
+		setFrom 'src/main/cpp/library.cpp'
+	}
+}
+
+import org.gradle.internal.jvm.Jvm
+def jvmHome = Jvm.current().javaHome
+
+tasks.withType(CppCompile).configureEach {
+	includes.from(new File(jvmHome, "include"))
+	includes.from(new File(jvmHome, "include/win32"))
+	includes.from(project(':calligraphy-windows').layout.buildDirectory.dir('generated/sources/headers/java/main'))
+
+	compilerArgs.addAll('/std:c++20')
+	if (name.startsWith('compileRelease')) compilerArgs.addAll('/O2')
+
+	dependsOn ':calligraphy-windows:compileJava'
+}
+
+tasks.withType(AbstractLinkTask).configureEach {
+	linkerArgs.addAll('ole32.lib', 'oleaut32.lib')
+}
